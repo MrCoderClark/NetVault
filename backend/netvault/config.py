@@ -1,3 +1,4 @@
+import secrets
 from pathlib import Path
 
 from pydantic import model_validator
@@ -16,10 +17,25 @@ class Settings(BaseSettings):
     static_dir: Path = Path("../frontend/out")
     cors_origins: list[str] = []
 
+    # Auth / session configuration
+    jwt_secret: str = ""
+    access_token_ttl_seconds: int = 900  # 15 minutes
+    refresh_token_ttl_seconds: int = 604800  # 7 days
+    refresh_idle_ttl_seconds: int = 1800  # 30 minutes of inactivity
+    max_failed_logins: int = 5
+    lockout_duration_seconds: int = 900  # 15 minutes
+
     @model_validator(mode="after")
-    def demo_only(self) -> "Settings":
-        if not self.demo_mode:
-            raise ValueError("Authentication is not implemented; only demo mode is available")
+    def _derive_jwt_secret(self) -> "Settings":
+        if not self.jwt_secret:
+            if not self.demo_mode:
+                raise ValueError(
+                    "NETVAULT_JWT_SECRET must be set when demo_mode is disabled"
+                )
+            # Ephemeral secret for demo/dev. Sessions won't survive a process restart.
+            self.jwt_secret = secrets.token_urlsafe(48)
+        if len(self.jwt_secret) < 32:
+            raise ValueError("NETVAULT_JWT_SECRET must be at least 32 characters")
         return self
 
     def database_url(self) -> URL:

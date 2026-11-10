@@ -23,6 +23,20 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def ensure_utc(value: datetime | None) -> datetime | None:
+    """Return the value tagged as UTC if the DB driver dropped its tzinfo.
+
+    SQLAlchemy ``DateTime(timezone=True)`` round-trips through SQLite as a
+    naive datetime; comparing it with an aware ``utcnow()`` raises
+    ``TypeError``. Postgres preserves the timezone, so this is a no-op there.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 class Base(DeclarativeBase):
     pass
 

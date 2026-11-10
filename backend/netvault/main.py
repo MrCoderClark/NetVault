@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -11,15 +12,11 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from netvault.auth.api import router as auth_router
 from netvault.config import Settings
 from netvault.dashboard import load_dashboard
+from netvault.deps import get_session
 from netvault.schemas import Dashboard
-
-
-async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
-    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
-    async with factory() as session:
-        yield session
 
 
 def create_app(settings: Settings | None = None, engine: AsyncEngine | None = None) -> FastAPI:
@@ -30,6 +27,7 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
         db = engine if engine is not None else create_async_engine(config.database_url())
         app.state.session_factory = async_sessionmaker(db, expire_on_commit=False)
         app.state.engine = db
+        app.state.settings = config
         app.state.started = True
         try:
             yield
@@ -39,13 +37,17 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
                 await db.dispose()
 
     app = FastAPI(title="NetVault", version="0.1.0", lifespan=lifespan)
+    app.state.settings = config
     if config.cors_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=config.cors_origins,
-            allow_methods=["GET"],
-            allow_headers=["Content-Type"],
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type", "Authorization"],
+            allow_credentials=True,
         )
+
+    app.include_router(auth_router)
 
     @app.get("/healthz")
     async def health() -> dict[str, str]:
