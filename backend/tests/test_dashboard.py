@@ -60,6 +60,10 @@ async def test_site_filter_and_unseeded_error(engine: AsyncEngine) -> None:
             assert (await client.get("/api/v1/dashboard?site=../../etc")).status_code == 422
 
 
-def test_non_demo_mode_fails_closed() -> None:
-    with pytest.raises(ValueError, match="Authentication is not implemented"):
+def test_non_demo_mode_requires_jwt_secret() -> None:
+    with pytest.raises(ValueError, match="JWT_SECRET must be set"):
         Settings(demo_mode=False)
+
+
+def test_demo_mode_generates_ephemeral_jwt_secret() -> None:
+    assert len(Settings(demo_mode=True).jwt_secret) >= 32

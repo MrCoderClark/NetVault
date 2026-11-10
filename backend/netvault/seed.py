@@ -1,11 +1,22 @@
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from netvault.config import Settings
-from netvault.models import DemoActivity, Host, Tenant
+from netvault.models import DemoActivity, Host, Tenant, User
+from netvault.security.passwords import hash_password
+
+DEMO_EMAIL = "admin@example.com"
+DEMO_PASSWORD_ENV = "NETVAULT_DEMO_PASSWORD"
+DEMO_PASSWORD_FALLBACK = "demo-change-me"
+
+
+def _demo_password() -> str:
+    value = os.environ.get(DEMO_PASSWORD_ENV, "").strip()
+    return value or DEMO_PASSWORD_FALLBACK
 
 
 async def seed_demo(engine: AsyncEngine) -> None:
@@ -17,8 +28,24 @@ async def seed_demo(engine: AsyncEngine) -> None:
             session.add(tenant)
             await session.flush()
 
-        existing = await session.scalar(select(Host.id).where(Host.tenant_id == tenant.id).limit(1))
-        if existing is not None:
+        existing_user = await session.scalar(
+            select(User.id).where(User.tenant_id == tenant.id).limit(1)
+        )
+        if existing_user is None:
+            session.add(
+                User(
+                    tenant_id=tenant.id,
+                    email=DEMO_EMAIL,
+                    display_name="Demo Admin",
+                    password_hash=hash_password(_demo_password()),
+                    is_active=True,
+                )
+            )
+
+        existing_host = await session.scalar(
+            select(Host.id).where(Host.tenant_id == tenant.id).limit(1)
+        )
+        if existing_host is not None:
             return
 
         host_names = (
