@@ -5,22 +5,28 @@ from netvault.models import DemoActivity, Host, Tenant
 from netvault.schemas import Activity, Dashboard, Reachability, Stats
 
 
-async def load_dashboard(session: AsyncSession, site: str) -> Dashboard:
-    tenant = await session.scalar(select(Tenant).where(Tenant.slug == "demo"))
+async def load_dashboard(
+    session: AsyncSession, tenant_id: str, site: str
+) -> Dashboard:
+    tenant = await session.get(Tenant, tenant_id)
     if tenant is None:
-        raise RuntimeError("Demo data is missing. Run the seed command first.")
+        raise RuntimeError("Tenant not found")
 
     hosts = (
         await session.scalars(
             select(Host)
-            .where(Host.tenant_id == tenant.id, Host.site == site, Host.is_demo.is_(True))
+            .where(
+                Host.tenant_id == tenant_id,
+                Host.site == site,
+                Host.is_demo.is_(True),
+            )
             .order_by(Host.name)
         )
     ).all()
     activities = (
         await session.scalars(
             select(DemoActivity)
-            .where(DemoActivity.tenant_id == tenant.id, DemoActivity.site == site)
+            .where(DemoActivity.tenant_id == tenant_id, DemoActivity.site == site)
             .order_by(DemoActivity.occurred_at.desc())
             .limit(16)
         )
@@ -37,7 +43,10 @@ async def load_dashboard(session: AsyncSession, site: str) -> Dashboard:
             running_jobs=0,
         ),
         activities=[Activity.model_validate(activity) for activity in activities],
-        hosts=[Reachability(name=host.name, status=host.reachability, sample=True) for host in hosts],
+        hosts=[
+            Reachability(name=host.name, status=host.reachability, sample=True)
+            for host in hosts
+        ],
         read_mbps=[],
         write_mbps=[],
     )

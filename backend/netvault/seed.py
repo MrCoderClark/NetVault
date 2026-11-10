@@ -8,6 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from netvault.config import Settings
 from netvault.models import DemoActivity, Host, Tenant, User
 from netvault.security.passwords import hash_password
+from netvault.security.rbac import (
+    ensure_user_role,
+    seed_permission_catalogue,
+    seed_system_roles,
+)
 
 DEMO_EMAIL = "admin@example.com"
 DEMO_PASSWORD_ENV = "NETVAULT_DEMO_PASSWORD"
@@ -28,19 +33,29 @@ async def seed_demo(engine: AsyncEngine) -> None:
             session.add(tenant)
             await session.flush()
 
-        existing_user = await session.scalar(
-            select(User.id).where(User.tenant_id == tenant.id).limit(1)
+        permission_ids = await seed_permission_catalogue(session)
+        role_ids = await seed_system_roles(session, tenant.id, permission_ids)
+
+        demo_user = await session.scalar(
+            select(User).where(User.tenant_id == tenant.id, User.email == DEMO_EMAIL)
         )
-        if existing_user is None:
-            session.add(
-                User(
-                    tenant_id=tenant.id,
-                    email=DEMO_EMAIL,
-                    display_name="Demo Admin",
-                    password_hash=hash_password(_demo_password()),
-                    is_active=True,
-                )
+        if demo_user is None:
+            demo_user = User(
+                tenant_id=tenant.id,
+                email=DEMO_EMAIL,
+                display_name="Demo Admin",
+                password_hash=hash_password(_demo_password()),
+                is_active=True,
             )
+            session.add(demo_user)
+            await session.flush()
+
+        await ensure_user_role(
+            session,
+            user_id=demo_user.id,
+            role_id=role_ids["SuperAdmin"],
+            tenant_id=tenant.id,
+        )
 
         existing_host = await session.scalar(
             select(Host.id).where(Host.tenant_id == tenant.id).limit(1)

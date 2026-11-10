@@ -13,9 +13,11 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from netvault.auth.api import router as auth_router
+from netvault.auth.deps import require_permission
 from netvault.config import Settings
 from netvault.dashboard import load_dashboard
 from netvault.deps import get_session
+from netvault.models import User
 from netvault.schemas import Dashboard
 
 
@@ -71,10 +73,11 @@ def create_app(settings: Settings | None = None, engine: AsyncEngine | None = No
     @app.get("/api/v1/dashboard", response_model=Dashboard)
     async def dashboard(
         site: str = Query(default="eu-dublin", pattern=r"^[a-z0-9-]{1,80}$"),
+        user: User = Depends(require_permission("dashboard:read")),
         session: AsyncSession = Depends(get_session),
     ) -> Dashboard:
         try:
-            return await load_dashboard(session, site)
+            return await load_dashboard(session, user.tenant_id, site)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
