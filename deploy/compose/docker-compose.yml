@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: netvault
+      POSTGRES_DB: netvault
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netvault -d netvault"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    environment:
+      NETVAULT_DATABASE_HOST: db
+      NETVAULT_DATABASE_USER: netvault
+      NETVAULT_DATABASE_NAME: netvault
+      NETVAULT_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      NETVAULT_STATIC_DIR: /srv/frontend
+    secrets:
+      - postgres_password
+    volumes:
+      - ../../frontend/out:/srv/frontend:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+
+volumes:
+  db-data:
