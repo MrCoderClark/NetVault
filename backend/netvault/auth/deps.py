@@ -1,8 +1,9 @@
-"""FastAPI dependency that resolves the current authenticated user."""
+"""FastAPI dependency that resolves the current authenticated user and permissions."""
 
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Callable, Coroutine
+from typing import Annotated, Any
 
 from fastapi import Depends, Header, HTTPException, status
 from jwt import PyJWTError
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from netvault.config import Settings
 from netvault.deps import get_session, get_settings
 from netvault.models import User
+from netvault.security.rbac import user_has_permission
 from netvault.security.sessions import find_active_session_by_id
 from netvault.security.tokens import decode_access_token
 
@@ -57,3 +59,27 @@ async def get_current_user(
         raise _unauthorized("user_disabled")
 
     return user
+
+
+def require_permission(
+    permission_name: str,
+) -> Callable[[User, AsyncSession], Coroutine[Any, Any, User]]:
+    """Return a FastAPI dependency that enforces the named permission."""
+
+    async def dependency(
+        user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_session),
+    ) -> User:
+        if not await user_has_permission(
+            db, user_id=user.id, permission_name=permission_name
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "forbidden",
+                    "required_permission": permission_name,
+                },
+            )
+        return user
+
+    return dependency
